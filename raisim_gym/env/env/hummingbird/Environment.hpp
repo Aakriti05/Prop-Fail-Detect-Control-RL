@@ -102,7 +102,7 @@ class ENVIRONMENT : public RaisimGymEnv {
                               dragCoeff_, dragCoeff_, -dragCoeff_, -dragCoeff_,
                                        1,          1,           1,           1;
 
-    gui::rewardLogger.init({"positionReward", "thrustReward", "orientationReward", "angVelReward"});
+    gui::rewardLogger.init({"positionReward", "orientationReward", "angVelReward"});
 
     /// visualize if it is the first environment
     if (visualizable_) {
@@ -158,24 +158,24 @@ class ENVIRONMENT : public RaisimGymEnv {
 
     float dummy;
     do{
-      position_[0] = 1.0 * normDist_(gen_);
-      position_[1] = 1.0 * normDist_(gen_);
-      position_[2] = 1.0 * normDist_(gen_);
+      position_[0] = 0.0; //1.0 * normDist_(gen_);
+      position_[1] = 0.0; //1.0 * normDist_(gen_);
+      position_[2] = -4.5; //1.0 * normDist_(gen_);
 
-      linVel_W_[0] = 2.0 * normDist_(gen_);
-      linVel_W_[1] = 2.0 * normDist_(gen_);
-      linVel_W_[2] = 2.0 * normDist_(gen_);
+      linVel_W_[0] = 0.0; //1.0 * normDist_(gen_); // 5.0
+      linVel_W_[1] = 0.0; //1.0 * normDist_(gen_); // 5.0
+      linVel_W_[2] = 0.0; //1.0 * normDist_(gen_); // 5.0
 
-      angVel_W_[0] = 5.0 * normDist_(gen_);
-      angVel_W_[1] = 5.0 * normDist_(gen_);
-      angVel_W_[2] = 5.0 * normDist_(gen_);
+      angVel_W_[0] = 0.0; //1.0 * normDist_(gen_); // 5.0
+      angVel_W_[1] = 0.0; //1.0 * normDist_(gen_); // 5.0
+      angVel_W_[2] = 0.0; //1.0 * normDist_(gen_); // 5.0
     } while( isTerminalState(dummy) );
 
     // sampling random orientation
-    quaternion_[0] = normDist_(gen_);
-    quaternion_[1] = normDist_(gen_);
-    quaternion_[2] = normDist_(gen_);
-    quaternion_[3] = normDist_(gen_);
+    quaternion_[0] = 1.0; //normDist_(gen_);
+    quaternion_[1] = 0.0; //normDist_(gen_);
+    quaternion_[2] = 0.0; //normDist_(gen_);
+    quaternion_[3] = 0.0; //normDist_(gen_);
     quaternion_ /= quaternion_.norm();
 
     hummingbird_->setPosition(position_);
@@ -194,10 +194,91 @@ class ENVIRONMENT : public RaisimGymEnv {
     thrusts_ = thrusts_.cwiseProduct(actionStd_);
     thrusts_ += actionMean_;
 
+    for (int i =0; i<4;i++){
+      if(thrusts_(i) <= 0.0){
+          thrusts_(i) = 0.0;
+      }
+    }
+    for (int i =0; i<4;i++){
+      if(thrusts_(i) <= 0.0){
+        prop_lost_ += 1;
+      }
+    }
+    if(prop_lost_ == 1){
+      prop_lost_1 = 1;
+      prop_lost_2 = 0;
+      prop_lost_3 = 0;
+    }
+    if(prop_lost_ == 2){
+      prop_lost_2 = 2;
+      prop_lost_1 = 0;
+      prop_lost_3 = 0;
+    }
+    if(prop_lost_ == 3){
+      prop_lost_1 = 0;
+      prop_lost_2 = 0;
+      prop_lost_3 = 3;
+    }
+    prop_lost_ = 0;
+
+    // std::cout << thrusts_(0) << "\t" << thrusts_(1) << "\t" << thrusts_(2) << "\t" << thrusts_(3) << "\t" << (prop_lost_1 + prop_lost_2 + prop_lost_3) << std::endl;
+
     Eigen::Vector4d genForce = transsThrust2GenForce_ * thrusts_;
     Eigen::Vector3d torque_B = genForce.segment(0,3);
+    // Eigen::Vector3d torque_B;
+    // torque_B << 0.0, 0.0, 0.0;
     Eigen::Vector3d force_B;
     force_B << 0.0, 0.0, genForce(3);
+    // force_B << 0.0, 0.0, 0.0;
+
+    // control input from PD stabilization
+    double kp_rot = -0.2, kd_rot = -0.06;
+    Eigen::Vector3d fbTorque_b;
+
+    raisim::Vec<4> ori_;
+    raisim::rotMatToQuat(rot_, ori_);
+    double angle = 2.0 * std::acos(ori_[0]);
+    // if (angle > 1e-6)
+    //   fbTorque_b = kp_rot * angle * (R_.transpose() * orientation.tail(3))
+    //       / std::sin(angle) + kd_rot * (R_.transpose() * u_.head(3));
+    // else
+    //   fbTorque_b = kd_rot * (R_.transpose() * u_.head(3));
+    // fbTorque_b(2) = fbTorque_b(2) * 0.15; //Lower yaw gains
+
+    raisim::Vec<3> temp1, outTempkp;
+    // (R_.transpose() * orientation.tail(3))/ std::sin(angle)
+    raisim::Mat<3,3> transposedR_; 
+    raisim::transpose(rot_, transposedR_); // transposedR_ = R_.transpose()
+    temp1[0] = ori_[1]; temp1[1] = ori_[2]; temp1[2] = ori_[3]; // temp1 = orientation.tail(3)
+    raisim::matvecmul(transposedR_, temp1, outTempkp); // outTempkp = (R_.transpose() * orientation.tail(3))
+    raisim::vecDivide(outTempkp, angle, outTempkp); // outTempkp = outTempkp/angle
+    
+    // kp_rot * angle * outTempkp
+    for(int m=0;m<3;m++){
+      outTempkp[m] = outTempkp[m] * angle * kp_rot; //outTempkp = kp_rot * angle * (R_.transpose() * orientation.tail(3)) / std::sin(angle)
+    }
+
+    // kd_rot * (R_.transpose() * u_.head(3))
+    raisim::matvecmul(transposedR_, angVel_W_, temp1); // temp1 = R_.transpose() * u_.head(3)
+    for(int m=0;m<3;m++){
+      temp1[m] = temp1[m] * kd_rot; // temp1 = kd_rot * (R_.transpose() * u_.head(3))
+    }
+
+    if(angle > 1e-6){
+      raisim::vecadd(outTempkp, temp1, temp1); // fbTorque_b = outTempkp + temp1
+      for(int m=0;m<3;m++){
+        fbTorque_b[m] = temp1[m];
+      }
+    }
+    else{
+      for(int m=0;m<3;m++){
+        fbTorque_b[m] = temp1[m];
+      }
+    }
+    fbTorque_b[2] = fbTorque_b[2] * 0.15; //Lower yaw gains
+
+    // Sum of torque inputs
+    torque_B += fbTorque_b;
 
     raisim::Vec<3> torque_W, force_W;
     torque_W.e() = rot_.e() * torque_B;
@@ -228,18 +309,22 @@ class ENVIRONMENT : public RaisimGymEnv {
 
     if(visualizeThisStep_) {
       gui::rewardLogger.log("positionReward", positionReward_);
-      gui::rewardLogger.log("thrustReward", thrustReward_);
+      gui::rewardLogger.log_noncum("prop_lost", (prop_lost_1 + prop_lost_2 + prop_lost_3));
       gui::rewardLogger.log("orientationReward", orientationReward_);
       gui::rewardLogger.log("angVelReward", angVelReward_);
 
       /// reset camera
       auto vis = raisim::OgreVis::get();
 
-      vis->select(hummingbirdVis_->at(0), false);
-      vis->getCameraMan()->setYawPitchDist(Ogre::Radian(3.14), Ogre::Radian(-1.3), 3, true);
+      // vis->select(hummingbirdVis_->at(0), false);
+      // vis->getCameraMan()->setYawPitchDist(Ogre::Radian(3.14), Ogre::Radian(-1.3), 3, true);
+      vis->getCameraMan()->setStyle(raisim::CameraStyle::CS_FREELOOK);
+      vis->getCameraMan()->getCamera()->setPosition(0, 0, 2.5);
+      vis->getCameraMan()->getCamera()->setOrientation(1, 0, 0, 0);
+      vis->getCameraMan()->getCamera()->pitch(Ogre::Radian(1.57079632679 - 1.57079632679));
     }
 
-    return positionReward_ + thrustReward_ + orientationReward_;
+    return positionReward_ + thrustReward_ + orientationReward_ + angVelReward_;
   }
 
   void updateExtraInfo() final {
@@ -263,7 +348,6 @@ class ENVIRONMENT : public RaisimGymEnv {
     /// body velocities
     for(size_t i=0; i<3; i++)
       obDouble_[i+12] = linVel_W_[i];
-
     for(size_t i=0; i<3; i++)
       obDouble_[i+15] = angVel_W_[i];
 
@@ -310,6 +394,10 @@ class ENVIRONMENT : public RaisimGymEnv {
   double thrustRewardCoeff_ = 0., thrustReward_ = 0.;
   double orientationRewardCoeff_ = 0., orientationReward_ = 0.;
   double angVelRewardCoeff_ = 0., angVelReward_ = 0.;
+  double prop_lost_ = 0;
+  double prop_lost_1 = 0;
+  double prop_lost_2 = 0;
+  double prop_lost_3 = 0;
 
   double desired_fps_ = 60.;
   int visualizationCounter_=0;

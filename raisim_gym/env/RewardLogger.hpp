@@ -46,6 +46,15 @@ class RewardLogger {
       sum += value;
       count++;
     }
+    
+    void log_noncum(double value) {
+      values.clear();
+      values.push_back(value);
+      sum = 0;
+      sum += value;
+      count = 0;
+      count++;
+    }
 
     double sum = 0.;
     int count = 0;
@@ -62,6 +71,10 @@ class RewardLogger {
 
   void log(const std::string &termName, double value) {
     rewardTerms_[termName].log(value);
+  }
+
+  void log_noncum(const std::string &termName, double value) {
+    rewardTerms_[termName].log_noncum(value);
   }
 
   const std::unordered_map<std::string, RewardTerm>& getRewardTerms() const {
