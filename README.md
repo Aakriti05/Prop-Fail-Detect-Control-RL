@@ -8,7 +8,7 @@ For installation instructions please see https://github.com/leggedrobotics/raisi
 
 `scripts/quadcopter_position tracking.py` can be used to train RL agents as explained in the link above. To test a model, `scripts/plotting_stuff.py` can be used with the following arguments:  
 
-`--scene`:
+`--scene`:  
 0 - 4 propeller system (Default)  
 1 - 3 propeller system  
 2 - 2 propeller system  
