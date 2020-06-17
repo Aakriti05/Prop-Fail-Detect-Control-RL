@@ -15,7 +15,7 @@ For installation instructions please see https://github.com/leggedrobotics/raisi
 3 - 4 to 3 propeller system  
 4 - 3 to 2 propeller system  
 
-`--plot`:
+`--plot`:  
 0 - Suppress plotting (Default)  
 1 - Enable plotting  
 
